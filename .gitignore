@@ -1,5 +1,5 @@
 # ide
-.vscode/
+.*/
 
 # cmake
-build/
+*build*/
