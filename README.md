@@ -159,7 +159,7 @@ __global__ void relu_float4(float* x, float* y, int N) {
 
 ```cpp
 dim3 block_size(BLOCK_SIZE);  // BLOCK_SIZE 是通过宏定义的某个数字
-dim3 grid_size(CIEL(N, BLOCK_SIZE));
+dim3 grid_size(CEIL(N, BLOCK_SIZE));
 reduce_v1<<<grid_size, block_size>>>(d_x, d_y, N);
 
 __global__ void reduce_v1(const float* input, float* output, int N) {
@@ -176,7 +176,7 @@ __global__ void reduce_v1(const float* input, float* output, int N) {
 
 ```cpp
 dim3 block_size(BLOCK_SIZE);  // BLOCK_SIZE 是通过宏定义的某个数字
-dim3 grid_size(CIEL(N, BLOCK_SIZE));
+dim3 grid_size(CEIL(N, BLOCK_SIZE));
 reduce_v2<<<grid_size, block_size>>>(d_x, d_y, N);
 
 __global__ void reduce_v2(const float* input, float* output, int N) {
@@ -218,7 +218,7 @@ __global__ void reduce_v2(const float* input, float* output, int N) {
 
 ```cpp
 dim3 block_size(BLOCK_SIZE);
-dim3 grid_size(CIEL(N, BLOCK_SIZE));
+dim3 grid_size(CEIL(N, BLOCK_SIZE));
 reduce_v3<<<grid_size, block_size>>>(d_x, d_y, N)
 
 __global__ void reduce_v3(float* d_x, float* d_y, const int N) {
@@ -254,7 +254,7 @@ __global__ void reduce_v3(float* d_x, float* d_y, const int N) {
 ```cpp
 #define FLOAT4(value) (float4*)(&(value))[0]
 dim3 block_size(BLOCK_SIZE);
-dim3 grid_size(CEIL(CIEL(N, BLOCK_SIZE),4));  // 这里要除以4
+dim3 grid_size(CEIL(CEIL(N, BLOCK_SIZE),4));  // 这里要除以4
 reduce_v3<<<grid_size, block_size>>>(d_x, d_y, N)
 
 __global__ void reduce_v4(float* d_x, float* d_y, const int N) {
