@@ -1,0 +1,18 @@
+CompileFlags:
+  Add:
+    - "-I/usr/local/cuda/include"
+    - "-I/usr/local/cuda/targets/x86_64-linux/include"
+    - "-I/home/wu/code/ai_infra/operator"
+    - "-x"
+    - "cuda"
+    - "--cuda-gpu-arch=sm_89"
+    - "--no-cuda-version-check"
+  Remove:
+    - "-forward-unknown-to-host-compiler"
+    - "--options-file"
+    - "--generate-code*"
+    - "*.rsp"
+    - "--generate-code*"
+    - "--generate-code=arch=compute_89,code=[compute_89,sm_89]"
+    - "-x"
+    - "cu"

@@ -5,6 +5,7 @@
 #define FLOAT4(a) *(float4*)(&(a))
 #define CEIL(a,b) ((a+b-1)/(b))
 #define cudaCheck(err) _cudaCheck(err, __FILE__, __LINE__)
+
 void _cudaCheck(cudaError_t error, const char *file, int line) {
     if (error != cudaSuccess) {
         printf("[CUDA ERROR] at file %s(line %d):\n%s\n", file, line, cudaGetErrorString(error));
@@ -27,6 +28,34 @@ __global__ void elementwise_add_float4(float* a, float* b, float* c, int N) {
     tmp_c.w = tmp_a.w + tmp_b.w;
     FLOAT4(c[idx]) = tmp_c;
 }
+
+
+// 处理剩余的尾巴 (Peeling)
+// __global__ void elementwise_add_float4(float* a, float* b, float* c, int N) {
+//     int idx = (blockDim.x * blockIdx.x + threadIdx.x) * 4;
+//     if (idx >= N) return;
+
+//     // 检查是否能安全读取 4 个
+//     if (idx + 4 <= N) {
+//         // 安全：可以使用向量化读写
+//         float4 tmp_a = FLOAT4(a[idx]);
+//         float4 tmp_b = FLOAT4(b[idx]);
+//         float4 tmp_c;
+//         tmp_c.x = tmp_a.x + tmp_b.x;
+//         tmp_c.y = tmp_a.y + tmp_b.y;
+//         tmp_c.z = tmp_a.z + tmp_b.z;
+//         tmp_c.w = tmp_a.w + tmp_b.w;
+//         FLOAT4(c[idx]) = tmp_c;
+//     } else {
+//         // 不安全：处理剩余的尾巴 (Peeling)
+//         // 一个个处理，防止越界
+//         for (int i = 0; i < 4; ++i) {
+//             if (idx + i < N) {
+//                 c[idx + i] = a[idx + i] + b[idx + i];
+//             }
+//         }
+//     }
+// }
 
 int main() {
     constexpr int N = 7;
