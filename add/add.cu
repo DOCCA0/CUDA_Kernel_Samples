@@ -27,6 +27,27 @@ __global__ void elementwise_add(float* a, float* b, float* c, int n){
     FLOAT4(c[idx]) = tmp_c;
 }
 
+__global__ void elementwise_add_peeling(float* a, float* b, float* c, int n){
+    int idx=(blockIdx.x * blockDim.x + threadIdx.x) * 4;
+    if (idx >=n)
+        return;
+    if(idx + 3< n){
+        float4 tmp_a = FLOAT4(a[idx]);
+        float4 tmp_b = FLOAT4(b[idx]);
+        float4 tmp_c;
+        tmp_c.x = tmp_a.x + tmp_b.x;
+        tmp_c.y = tmp_a.y + tmp_b.y;
+        tmp_c.z = tmp_a.z + tmp_b.z;
+        tmp_c.w = tmp_a.w + tmp_b.w;
+        FLOAT4(c[idx]) = tmp_c;
+    }else{
+        for(int i=idx;i<n;i++){
+            c[i]=a[i]+b[i];
+        }
+    }
+
+}
+
 int main(){
     int n=7;
     float *a_h, *b_h, *c_h;
