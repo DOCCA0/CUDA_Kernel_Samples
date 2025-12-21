@@ -4,5 +4,5 @@ project(cuda LANGUAGES CXX CUDA)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CUDA_STANDARD 11)
 
-# add_executable(add ./elementwise/add.cu)
+add_executable(add ./add/add.cu)
 
