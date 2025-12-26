@@ -4,5 +4,6 @@ project(cuda LANGUAGES CXX CUDA)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CUDA_STANDARD 11)
 
-add_executable(add ./add/add.cu)
+add_executable(sgemv ./sgemv/sgemv.cu)
+target_link_libraries(sgemv PRIVATE cublas)
 
