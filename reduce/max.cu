@@ -1,6 +1,4 @@
 #include <cstdlib>
-#include <cuda_runtime_api.h>
-#include <driver_types.h>
 #include <iostream>
 #include <float.h>
 #include <algorithm>
@@ -54,7 +52,7 @@ __device__ static float atomicMax(float* address, float val) {
 }
 
 __global__ void max_kernel(float *input, float *output, int N){
-    // blockNum 和 blockSize都小于等于32
+    // max(warpSize,warpNum)
     __shared__ float sdata[32]; 
     // grid内全局线程id
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
