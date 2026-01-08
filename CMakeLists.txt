@@ -4,6 +4,7 @@ project(cuda LANGUAGES CXX CUDA)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CUDA_STANDARD 11)
 
-add_executable(max ./reduce/max.cu)
+# add_executable(max ./reduce/max.cu)
+add_executable(sum ./reduce/sum.cu)
 # target_link_libraries(sgemv PRIVATE cublas)
 

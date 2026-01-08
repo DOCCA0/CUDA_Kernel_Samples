@@ -193,7 +193,7 @@ __global__ void reduce_v5(float* x_d, float* y_d, int n) {
     // float4合并 float val = (gid < n) ? x_d[gid] : 0.0f;
     if(gid + 3 < n){
         float4 tmp = FLOAT4(x_d[gid]);
-        float val = tmp.x + tmp.y + tmp.z + tmp.w;
+        val = tmp.x + tmp.y + tmp.z + tmp.w;
     }else{
         for(int i=gid;i<n;i++){
             val+=x_d[i];
@@ -226,6 +226,63 @@ __global__ void reduce_v5(float* x_d, float* y_d, int n) {
 
 }
 
+
+template <unsigned int blockSize>
+void call_reduce_v0(float* d_nums, float* d_rd_nums, float* h_rd_nums, int N, float* sum) {
+    int gridSize = CEIL(N, blockSize);
+    reduce_v0<<<gridSize, blockSize>>>(d_nums, d_rd_nums, N);
+    cudaMemcpy(h_rd_nums, d_rd_nums, gridSize * sizeof(float), cudaMemcpyDeviceToHost);
+    *sum = 0;
+    for (int i = 0; i < gridSize; i++) {
+        *sum += h_rd_nums[i];
+    }
+}
+
+template <unsigned int blockSize>
+void call_reduce_v1(float* d_nums, float* d_rd_nums, float* h_rd_nums, int N, float* sum) {
+    int gridSize = CEIL(N, blockSize);
+    reduce_v1<blockSize><<<gridSize, blockSize>>>(d_nums, d_rd_nums, N);
+    cudaMemcpy(h_rd_nums, d_rd_nums, gridSize * sizeof(float), cudaMemcpyDeviceToHost);
+    *sum = 0;
+    for (int i = 0; i < gridSize; i++) {
+        *sum += h_rd_nums[i];
+    }
+}
+
+template <unsigned int blockSize>
+void call_reduce_v2(float* d_nums, float* d_rd_nums, float* h_rd_nums, int N, float* sum) {
+    int gridSize = CEIL(N, blockSize);
+    reduce_v2<<<gridSize, blockSize, blockSize * sizeof(float)>>>(d_nums, d_rd_nums, N);
+    cudaMemcpy(h_rd_nums, d_rd_nums, gridSize * sizeof(float), cudaMemcpyDeviceToHost);
+    *sum = 0;
+    for (int i = 0; i < gridSize; i++) {
+        *sum += h_rd_nums[i];
+    }
+}
+
+template <unsigned int blockSize>
+void call_reduce_v3(float* d_nums, float* d_rd_nums, float* h_rd_nums, int N, float* sum) {
+    int gridSize = CEIL(N, blockSize);
+    cudaMemset(d_rd_nums, 0, sizeof(float));
+    reduce_v3<<<gridSize, blockSize, blockSize * sizeof(float)>>>(d_nums, d_rd_nums, N);
+    cudaMemcpy(sum, d_rd_nums, sizeof(float), cudaMemcpyDeviceToHost);
+}
+
+template <unsigned int blockSize>
+void call_reduce_v4(float* d_nums, float* d_rd_nums, float* h_rd_nums, int N, float* sum) {
+    int gridSize = CEIL(N, blockSize);
+    cudaMemset(d_rd_nums, 0, sizeof(float));
+    reduce_v4<<<gridSize, blockSize>>>(d_nums, d_rd_nums, N);
+    cudaMemcpy(sum, d_rd_nums, sizeof(float), cudaMemcpyDeviceToHost);
+}
+
+template <unsigned int blockSize>
+void call_reduce_v5(float* d_nums, float* d_rd_nums, float* h_rd_nums, int N, float* sum) {
+    int gridSize = CEIL(N, blockSize * 4);
+    cudaMemset(d_rd_nums, 0, sizeof(float));
+    reduce_v5<<<gridSize, blockSize>>>(d_nums, d_rd_nums, N);
+    cudaMemcpy(sum, d_rd_nums, sizeof(float), cudaMemcpyDeviceToHost);
+}
 
 void randomize_matrix(float *mat, int N) {
     std::random_device rd;  
@@ -266,6 +323,41 @@ int main() {
 
     // reduce_v0,全局内存
     cudaMemcpy(d_nums, nums_h, sizeof(float) * N, cudaMemcpyHostToDevice);
+    call_reduce_v0<BLOCK_SIZE>(d_nums, d_rd_nums, h_rd_nums, N, sum);
+    float sum0 = *sum;
+
+    cudaMemcpy(d_nums, nums_h, sizeof(float) * N, cudaMemcpyHostToDevice);
     float total_time_0 = TIME_RECORD(repeat_times, ([&]{call_reduce_v0<BLOCK_SIZE>(d_nums, d_rd_nums, h_rd_nums, N, sum);}));
-    printf("[reduce_v0]: sum = %f, total_time_0 = %f ms\n", *sum, total_time_0 / repeat_times);
+    printf("[reduce_v0]: sum = %f, total_time_0 = %f ms\n", sum0, total_time_0 / repeat_times);
+
+    // reduce_v1
+    cudaMemcpy(d_nums, nums_h, sizeof(float) * N, cudaMemcpyHostToDevice);
+    float total_time_1 = TIME_RECORD(repeat_times, ([&]{call_reduce_v1<BLOCK_SIZE>(d_nums, d_rd_nums, h_rd_nums, N, sum);}));
+    printf("[reduce_v1]: sum = %f, total_time_1 = %f ms\n", *sum, total_time_1 / repeat_times);
+
+    // reduce_v2
+    cudaMemcpy(d_nums, nums_h, sizeof(float) * N, cudaMemcpyHostToDevice);
+    float total_time_2 = TIME_RECORD(repeat_times, ([&]{call_reduce_v2<BLOCK_SIZE>(d_nums, d_rd_nums, h_rd_nums, N, sum);}));
+    printf("[reduce_v2]: sum = %f, total_time_2 = %f ms\n", *sum, total_time_2 / repeat_times);
+
+    // reduce_v3
+    cudaMemcpy(d_nums, nums_h, sizeof(float) * N, cudaMemcpyHostToDevice);
+    float total_time_3 = TIME_RECORD(repeat_times, ([&]{call_reduce_v3<BLOCK_SIZE>(d_nums, d_rd_nums, h_rd_nums, N, sum);}));
+    printf("[reduce_v3]: sum = %f, total_time_3 = %f ms\n", *sum, total_time_3 / repeat_times);
+
+    // reduce_v4
+    cudaMemcpy(d_nums, nums_h, sizeof(float) * N, cudaMemcpyHostToDevice);
+    float total_time_4 = TIME_RECORD(repeat_times, ([&]{call_reduce_v4<BLOCK_SIZE>(d_nums, d_rd_nums, h_rd_nums, N, sum);}));
+    printf("[reduce_v4]: sum = %f, total_time_4 = %f ms\n", *sum, total_time_4 / repeat_times);
+
+    // reduce_v5
+    cudaMemcpy(d_nums, nums_h, sizeof(float) * N, cudaMemcpyHostToDevice);
+    float total_time_5 = TIME_RECORD(repeat_times, ([&]{call_reduce_v5<BLOCK_SIZE>(d_nums, d_rd_nums, h_rd_nums, N, sum);}));
+    printf("[reduce_v5]: sum = %f, total_time_5 = %f ms\n", *sum, total_time_5 / repeat_times);
+    
+    free(nums_h);
+    free(sum);
+    free(h_rd_nums);
+    cudaFree(d_nums);
+    cudaFree(d_rd_nums);
 }
