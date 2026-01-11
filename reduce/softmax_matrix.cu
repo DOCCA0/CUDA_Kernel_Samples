@@ -1,5 +1,4 @@
 #include "iostream"
-#include <__clang_cuda_builtin_vars.h>
 #include <cmath>
 #include <cstdlib>
 #include <cuda_runtime_api.h>
@@ -370,6 +369,135 @@ __global__ void __launch_bounds__(32) softmax_col_kernel_warp(float* input_matri
             output_matrix[row * N + col] = expf(input_matrix[row * N + col] - val_max) / val_sum;
         }
     }
+}
+
+int main() {
+    const int M = 20480;
+    const int N = 640;
+    const int repeat_times = 10;
+    
+    size_t size = M * N * sizeof(float);
+    float *h_input = (float*)malloc(size);
+    float *h_output_cpu = (float*)malloc(size);
+    float *h_output_gpu = (float*)malloc(size);
+
+    srand(time(0));
+    for (int i = 0; i < M * N; ++i) {
+        h_input[i] = (float)rand() / RAND_MAX;
+    }
+
+    float *d_input, *d_output;
+    _cudaCheck(cudaMalloc(&d_input, size));
+    _cudaCheck(cudaMalloc(&d_output, size));
+
+    _cudaCheck(cudaMemcpy(d_input, h_input, size, cudaMemcpyHostToDevice));
+
+    // ==========================================
+    // Row Softmax
+    // ==========================================
+    printf("================ Row Softmax ================\n");
+    
+    // CPU
+    float cpu_time = TIME_RECORD(repeat_times, [&] {
+        softmax_row_cpu(h_input, h_output_cpu, M, N);
+    });
+    printf("CPU time: %f ms\n", cpu_time / repeat_times);
+
+    // GPU Kernel 1 (Block)
+    dim3 block(128);
+    dim3 grid(M);
+    float gpu_time = TIME_RECORD(repeat_times, ([&] {
+        softmax_row_kernel<<<grid, block>>>(d_input, d_output, M, N);
+    }));
+    _cudaCheck(cudaMemcpy(h_output_gpu, d_output, size, cudaMemcpyDeviceToHost));
+    
+    bool correct = true;
+    for(int i=0; i<M*N; ++i) {
+        if(fabs(h_output_cpu[i] - h_output_gpu[i]) > 1e-4) {
+             printf("Row Kernel 1 Error at %d: cpu=%f, gpu=%f\n", i, h_output_cpu[i], h_output_gpu[i]);
+             correct = false;
+             break;
+        }
+    }
+    if(correct) printf("Row Kernel 1 (Block) time: %f ms, Result: PASS\n", gpu_time / repeat_times);
+
+    // GPU Kernel 2 (Warp)
+    dim3 block_warp(32);
+    dim3 grid_warp(M);
+    gpu_time = TIME_RECORD(repeat_times, ([&] {
+        softmax_row_kernel_warp<<<grid_warp, block_warp>>>(d_input, d_output, M, N);
+    }));
+    _cudaCheck(cudaMemcpy(h_output_gpu, d_output, size, cudaMemcpyDeviceToHost));
+    
+    correct = true;
+    for(int i=0; i<M*N; ++i) {
+        if(fabs(h_output_cpu[i] - h_output_gpu[i]) > 1e-4) {
+             printf("Row Kernel 2 Error at %d: cpu=%f, gpu=%f\n", i, h_output_cpu[i], h_output_gpu[i]);
+             correct = false;
+             break;
+        }
+    }
+    if(correct) printf("Row Kernel 2 (Warp) time: %f ms, Result: PASS\n", gpu_time / repeat_times);
+
+
+    // ==========================================
+    // Col Softmax
+    // ==========================================
+    printf("\n================ Col Softmax ================\n");
+
+    // CPU
+    // Reset output for safety
+    memset(h_output_cpu, 0, size);
+    
+    cpu_time = TIME_RECORD(repeat_times, [&] {
+        softmax_col_cpu(h_input, h_output_cpu, M, N);
+    });
+    printf("CPU time: %f ms\n", cpu_time / repeat_times);
+
+    // GPU Kernel 1 (Block)
+    dim3 block_col(128);
+    dim3 grid_col(N);
+    gpu_time = TIME_RECORD(repeat_times, ([&] {
+        softmax_col_kernel<<<grid_col, block_col>>>(d_input, d_output, M, N);
+    }));
+    _cudaCheck(cudaMemcpy(h_output_gpu, d_output, size, cudaMemcpyDeviceToHost));
+    
+    correct = true;
+    for(int i=0; i<M*N; ++i) {
+        if(fabs(h_output_cpu[i] - h_output_gpu[i]) > 1e-4) {
+             printf("Col Kernel 1 Error at %d: cpu=%f, gpu=%f\n", i, h_output_cpu[i], h_output_gpu[i]);
+             correct = false;
+             break;
+        }
+    }
+    if(correct) printf("Col Kernel 1 (Block) time: %f ms, Result: PASS\n", gpu_time / repeat_times);
+
+    // GPU Kernel 2 (Warp)
+    dim3 block_col_warp(32);
+    dim3 grid_col_warp(N);
+    gpu_time = TIME_RECORD(repeat_times, ([&] {
+        softmax_col_kernel_warp<<<grid_col_warp, block_col_warp>>>(d_input, d_output, M, N);
+    }));
+    _cudaCheck(cudaMemcpy(h_output_gpu, d_output, size, cudaMemcpyDeviceToHost));
+    
+    correct = true;
+    for(int i=0; i<M*N; ++i) {
+        if(fabs(h_output_cpu[i] - h_output_gpu[i]) > 1e-4) {
+             printf("Col Kernel 2 Error at %d: cpu=%f, gpu=%f\n", i, h_output_cpu[i], h_output_gpu[i]);
+             correct = false;
+             break;
+        }
+    }
+    if(correct) printf("Col Kernel 2 (Warp) time: %f ms, Result: PASS\n", gpu_time / repeat_times);
+
+
+    cudaFree(d_input);
+    cudaFree(d_output);
+    free(h_input);
+    free(h_output_cpu);
+    free(h_output_gpu);
+
+    return 0;
 }
 
 
