@@ -1,5 +1,4 @@
 #include "iostream"
-#include "cstdlib"
 #include <cmath>
 #include <cstdlib>
 #include <cuda_runtime_api.h>
