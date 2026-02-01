@@ -82,16 +82,21 @@ __global__ void sgemm_v3( float *A,  float *B, float *C, int M, int N, int K, fl
     float tmp[TM+1] = {0.0f};
 
     // 移动窗口
+    #pragma unroll
     for (int k = 0; k < K; k += BK) {
+        #pragma unroll
         for (int i=0;i<BM; i += stride_a) {
             As[(row_a + i) * BK + col_a] = A[(row_a + i) * K + k + col_a];
         }
+        #pragma unroll
         for (int i=0;i<BN; i += stride_b) {
             Bs[(row_b + i) * BN + col_b] = B[(row_b + i) * N + k + col_b];
         }
         __syncthreads();
+        #pragma unroll
         for (int i=0;i<BK;++i){
             tmp[TM]=Bs[row_c * BN + col_c];
+            #pragma unroll
             for (int j=0;j<TM;++j){
                 tmp[j] += As[(row_c + j) * BK + i] * tmp[TM];
             }
@@ -102,6 +107,7 @@ __global__ void sgemm_v3( float *A,  float *B, float *C, int M, int N, int K, fl
         __syncthreads();
     }
 
+    #pragma unroll
     for (int i=0;i<TM;++i){
         C[(row_c + i) * N + col_c] = tmp[i] * alpha + beta * C[(row_c + i) * N + col_c];
     }
