@@ -197,7 +197,7 @@ __global__ void sgemm_v4( float *A,  float *B, float *C, int M, int N, int K, fl
 template <const int BM , const int BN, const int BK, const int TM, const int TN>
 __global__ void sgemm_v5( float *A,  float *B, float *C, int M, int N, int K, float alpha, float beta) {
     int bx = blockIdx.x;
-    int by = blockIdx.y;
+    int by = blockIdx.y 
 
 
     int thread_num = BM * BN / (TM * TN);
@@ -205,8 +205,8 @@ __global__ void sgemm_v5( float *A,  float *B, float *C, int M, int N, int K, fl
     // 一个线程负责计算 TM * TN 个 C 矩阵元素
     // 一共需要 BM/TM * BN/TN 个线程
     // (row_c, col_c) 是 C 矩阵块内的左上角起始位置
-    int row_c = threadIdx.x % (BN/TN) * TN;
-    int col_c = threadIdx.x / (BN/TN) * TM ;
+    int col_c = (threadIdx.x % (BN/TN)) * TN;
+    int row_c = (threadIdx.x / (BN/TN)) * TM ;
 
     __shared__ float As[BM][BK];
     __shared__ float Bs[BK][BN];
