@@ -2,6 +2,7 @@
 #include <__clang_cuda_builtin_vars.h>
 #include <__clang_cuda_runtime_wrapper.h>
 #include <cuda_runtime.h>
+#include <vector_types.h>
 
 // v1 每个线程负责C矩阵中的一个元素计算，但是全局内存
 __global__ __launch_bounds__(1024)
@@ -276,6 +277,7 @@ __global__ void sgemm_v5( float *A,  float *B, float *C, int M, int N, int K, fl
 
 
 // v6 float4 版本
+#define FETCH_FLOAT4(pointer) (reinterpret_cast<float4*>(&(pointer))[0])
 template <const int BM , const int BN, const int BK, const int TM, const int TN>
 __global__ void sgemm_v6( float *A,  float *B, float *C, int M, int N, int K, float alpha, float beta) {
     int bx = blockIdx.x;
@@ -287,10 +289,11 @@ __global__ void sgemm_v6( float *A,  float *B, float *C, int M, int N, int K, fl
     // 一个线程负责计算 TM * TN 个 C 矩阵元素
     // 一共需要 BM/TM * BN/TN 个线程
     // (row_c, col_c) 是 C 矩阵块内的左上角起始位置
-    int row_c = threadIdx.x % (BN/TN) * TN;
-    int col_c = threadIdx.x / (BN/TN) * TM ;
+    int col_c = (threadIdx.x % (BN/TN)) * TN;
+    int row_c = (threadIdx.x / (BN/TN)) * TM ;
 
-    __shared__ float As[BM][BK];
+    // As 转置，为了float4读取列
+    __shared__ float As[BK][BM];
     __shared__ float Bs[BK][BN];
 
     A = &A[by * BM * K];
@@ -298,47 +301,58 @@ __global__ void sgemm_v6( float *A,  float *B, float *C, int M, int N, int K, fl
     C = &C[by * BM * N + bx * BN];
 
     // (row_a,col_a) 是线程负责的 A 矩阵块内的起始位置
-    int col_a =threadIdx.x % (BK/4) * 4;
+    int col_a =(threadIdx.x % (BK/4)) * 4;
     int row_a = threadIdx.x / (BK/4);
-    int stride_a = 4*thread_num/BK;
+    // stride 是需要跳过的行数
+    int stride_a = thread_num/(BK/4);
 
     // (row_b,col_b) 是线程负责的 B 矩阵块内的起始位置
-    int col_b = threadIdx.x % BN;
-    int row_b = threadIdx.x / BN;
-    int stride_b = 4*thread_num / BN;
+    int col_b = (threadIdx.x % (BN/4)) * 4;
+    int row_b = threadIdx.x / (BN/4);
+    int stride_b = thread_num / (BN/4);
 
     // 每个线程负责TM*TN个元素，则需要申请TM*TN个寄存器保存累加值
     float tmp[TM][TN]= {0.f};
     float a_reg[TM];
     float b_reg[TN];
+
+    // // ldg_a_reg的大小为 每个A的元素大小/线程数（每个线程负责多少个A元素搬运）
+    // float ldg_a_reg[BM*BK/thread_num]= {0.f};
+
     // 移动窗口
     #pragma unroll
     for (int k = 0; k < K; k += BK) {
         // As上列向移动
         #pragma unroll
         for (int i=0;i<BM; i += stride_a) {
-            As[(row_a + i) * BK][col_a] = A[(row_a + i) * K  + col_a];
+            float4 fl4 =FETCH_FLOAT4(A[(row_a + i) * K + col_a]);
+            // As转置存，fl4中间缓存，减少共享内存访问冲突
+            As[(col_a)][ i + row_a] = fl4.x;
+            As[(col_a + 1)][ i + row_a] = fl4.y;
+            As[(col_a + 2)][ i + row_a] = fl4.z;
+            As[(col_a + 3)][ i + row_a] = fl4.w;
         }
         // Bs上行向移动
         #pragma unroll
         for (int i=0;i<BN; i += stride_b) {
-            Bs[(row_b + i) * BN][col_b] = B[(row_b + i) * N + col_b];
+            FETCH_FLOAT4(Bs[(row_b + i)*BN][col_b]) = FETCH_FLOAT4(B[(row_b + i) * N + col_b]); // 不需要转置
         }
         __syncthreads();
         #pragma unroll
         for (int i=0;i<BK;++i){
             #pragma unroll
-            for (int j=0;j<TM;++j){
-                a_reg[j] = As[(row_c + j) * BK][i];
+            for (int m=0;m<TM;m+=4){
+                // 转置就是为了这里
+                FETCH_FLOAT4(a_reg[m]) = FETCH_FLOAT4(As[i][(row_c + m) ]);
             }
             #pragma unroll
-            for (int l=0;l<TN;++l){
-                b_reg[l] = Bs[i * BN][col_c + l];
+            for (int n=0;n<TN;n+=4){
+                FETCH_FLOAT4(b_reg[n]) = FETCH_FLOAT4(Bs[i * BN][col_c + n]);
             }
             #pragma unroll
-            for (int j=0;j<TM;++j){
-                for (int l=0;l<TN;++l){
-                    tmp[j][l] += a_reg[j] * b_reg[l];
+            for (int m=0;m<TM;++m){
+                for (int n=0;n<TN;++n){
+                    tmp[m][n] += a_reg[m] * b_reg[n];
                 }
             }
         }
@@ -349,9 +363,14 @@ __global__ void sgemm_v6( float *A,  float *B, float *C, int M, int N, int K, fl
     }
 
     #pragma unroll
-    for (int i=0;i<TM;++i){
-        for (int j =0;j<TN;++j){ 
-            C[(row_c + i) * N + col_c + j] = alpha * tmp[i][j] + beta * C[(row_c + i) * N + col_c + j];
+    for (int m=0;m<TM;++m){
+        for (int n =0;n<TN;++n){ 
+            float4  c_fl4 =FETCH_FLOAT4(C[(row_c + m) * N + col_c + n]);
+            c_fl4.x = alpha * tmp[m][n] + beta * c_fl4.x;
+            c_fl4.y = alpha * tmp[m][n] + beta * c_fl4.y;
+            c_fl4.z = alpha * tmp[m][n] + beta * c_fl4.z;
+            c_fl4.w = alpha * tmp[m][n] + beta * c_fl4.w;
+            FETCH_FLOAT4(C[(row_c + m) * N + col_c + n]) = c_fl4;
         }
     }
 }
