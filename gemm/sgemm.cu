@@ -1,8 +1,17 @@
-
-#include <__clang_cuda_builtin_vars.h>
-#include <__clang_cuda_runtime_wrapper.h>
+#include <cstring>
+#include <iostream>
+#include <cstdlib>
 #include <cuda_runtime.h>
-#include <vector_types.h>
+
+
+#define CEIL(a, b) ((a + b-1) / (b))
+
+void _cudaCheck(cudaError_t err) {
+    if (err != cudaSuccess) {
+        std::cerr << "[CUDA Error]:" << cudaGetErrorString(err) << " at " << __FILE__ << ":" << __LINE__ << std::endl;
+        exit(EXIT_FAILURE);
+    }
+}
 
 // v1 每个线程负责C矩阵中的一个元素计算，但是全局内存
 __global__ __launch_bounds__(1024)
