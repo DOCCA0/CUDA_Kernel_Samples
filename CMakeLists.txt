@@ -6,6 +6,8 @@ set(CMAKE_CUDA_STANDARD 11)
 
 # add_executable(max ./reduce/max.cu)
 # add_executable(softmax ./reduce/softmax.cu)
-add_executable(softmax_matrix ./reduce/softmax_matrix.cu)
-# target_link_libraries(sgemv PRIVATE cublas)
+# add_executable(softmax_matrix ./reduce/softmax_matrix.cu)
+add_executable(sgemm ./gemm/sgemm.cu)
+
+target_link_libraries(sgemm PRIVATE cublas)
 

@@ -2,6 +2,7 @@
 #include <iostream>
 #include <cstdlib>
 #include <cuda_runtime.h>
+#include <cublas_v2.h>
 
 
 #define CEIL(a, b) ((a + b-1) / (b))
@@ -49,11 +50,11 @@ __global__ void sgemm_v2(const float *A, const float *B, float *C, int M, int N,
     float sum = 0.0f;
     // 移动窗口
     for (int k = 0; k < K; k += BK) {
-        As[row_c * BK + col_c] = A[row_c * K + col_c];
-        Bs[row_c * BN + col_c] = B[row_c * N + col_c ];
+        As[row_c][col_c] = A[row_c * K + col_c];
+        Bs[row_c][col_c] = B[row_c * N + col_c ];
         __syncthreads();
         for (int n = 0; n < BK; ++n) {
-            sum += As[row_c * BK + n] * Bs[n * BN + col_c];
+            sum += As[row_c][n] * Bs[n][col_c];
         }
         // 移动AB到下一个矩阵块
         A += BK;
@@ -96,19 +97,19 @@ __global__ void sgemm_v3( float *A,  float *B, float *C, int M, int N, int K, fl
     for (int k = 0; k < K; k += BK) {
         #pragma unroll
         for (int i=0;i<BM; i += stride_a) {
-            As[(row_a + i) * BK][col_a] = A[(row_a + i) * K  + col_a];
+            As[row_a + i][col_a] = A[(row_a + i) * K  + col_a];
         }
         #pragma unroll
-        for (int i=0;i<BN; i += stride_b) {
-            Bs[(row_b + i) * BN][col_b] = B[(row_b + i) * N + col_b];
+        for (int i=0;i<BK; i += stride_b) {
+            Bs[row_b + i][col_b] = B[(row_b + i) * N + col_b];
         }
         __syncthreads();
         #pragma unroll
         for (int i=0;i<BK;++i){
-            tmp[TM]=Bs[i * BN][col_c];
+            tmp[TM]=Bs[i][col_c];
             #pragma unroll
             for (int j=0;j<TM;++j){
-                tmp[j] += As[(row_c + j) * BK][i] * tmp[TM];
+                tmp[j] += As[row_c + j][i] * tmp[TM];
             }
         }
         // 移动AB到下一个矩阵块
@@ -171,12 +172,12 @@ __global__ void sgemm_v4( float *A,  float *B, float *C, int M, int N, int K, fl
         // As上列向移动
         #pragma unroll
         for (int i=0;i<BM; i += stride_a) {
-            As[(row_a + i) * BK][col_a] = A[(row_a + i) * K  + col_a];
+            As[row_a + i][col_a] = A[(row_a + i) * K  + col_a];
         }
         // Bs上行向移动
         #pragma unroll
-        for (int i=0;i<BN; i += stride_b) {
-            Bs[(row_b + i) * BN][col_b] = B[(row_b + i) * N + col_b];
+        for (int i=0;i<BK; i += stride_b) {
+            Bs[row_b + i][col_b] = B[(row_b + i) * N + col_b];
         }
         __syncthreads();
         #pragma unroll
@@ -184,7 +185,7 @@ __global__ void sgemm_v4( float *A,  float *B, float *C, int M, int N, int K, fl
             #pragma unroll
             for (int j=0;j<TM;++j){
                 for (int l=0;l<TN;++l){
-                    tmp[j][l] += As[(row_c + j) * BK][i] * Bs[i * BN][col_c + l];
+                    tmp[j][l] += As[row_c + j][i] * Bs[i][col_c + l];
                 }
             }
         }
@@ -207,7 +208,7 @@ __global__ void sgemm_v4( float *A,  float *B, float *C, int M, int N, int K, fl
 template <const int BM , const int BN, const int BK, const int TM, const int TN>
 __global__ void sgemm_v5( float *A,  float *B, float *C, int M, int N, int K, float alpha, float beta) {
     int bx = blockIdx.x;
-    int by = blockIdx.y 
+    int by = blockIdx.y;
 
 
     int thread_num = BM * BN / (TM * TN);
@@ -245,23 +246,23 @@ __global__ void sgemm_v5( float *A,  float *B, float *C, int M, int N, int K, fl
         // As上列向移动
         #pragma unroll
         for (int i=0;i<BM; i += stride_a) {
-            As[(row_a + i) * BK][col_a] = A[(row_a + i) * K  + col_a];
+            As[row_a + i][col_a] = A[(row_a + i) * K  + col_a];
         }
         // Bs上行向移动
         #pragma unroll
-        for (int i=0;i<BN; i += stride_b) {
-            Bs[(row_b + i) * BN][col_b] = B[(row_b + i) * N + col_b];
+        for (int i=0;i<BK; i += stride_b) {
+            Bs[row_b + i][col_b] = B[(row_b + i) * N + col_b];
         }
         __syncthreads();
         #pragma unroll
         for (int i=0;i<BK;++i){
             #pragma unroll
             for (int j=0;j<TM;++j){
-                a_reg[j] = As[(row_c + j) * BK][i];
+                a_reg[j] = As[row_c + j][i];
             }
             #pragma unroll
             for (int l=0;l<TN;++l){
-                b_reg[l] = Bs[i * BN][col_c + l];
+                b_reg[l] = Bs[i][col_c + l];
             }
             #pragma unroll
             for (int j=0;j<TM;++j){
@@ -282,6 +283,59 @@ __global__ void sgemm_v5( float *A,  float *B, float *C, int M, int N, int K, fl
             C[(row_c + i) * N + col_c + j] = alpha * tmp[i][j] + beta * C[(row_c + i) * N + col_c + j];
         }
     }
+}
+
+void randomize_matrix(float* mat, int N) {
+    for (int i = 0; i < N; i++) {
+        mat[i] = (float)(rand() % 100) / 100.0f;
+    }
+}
+
+bool verify_matrix(float *mat1, float *mat2, int N) {
+    double diff = 0.0;
+    for (int i = 0; i < N; i++) {
+        diff = std::abs(mat1[i] - mat2[i]);
+        if (diff > 0.01) {
+            printf("error. %5.2f,%5.2f,%d\n", mat1[i],mat2[i],i);
+            return false;
+        }
+    }
+    return true;
+}
+
+template<typename KernelFunc>
+void benchmark_kernel(KernelFunc kernel, dim3 grid, dim3 block,
+                      float *d_a, float *d_b, float *d_c,
+                      int M, int N, int K, float alpha, float beta,
+                      float *h_c, float *h_c_ref, size_t size_c,
+                      cudaEvent_t start, cudaEvent_t stop,
+                      const char* name) {
+    int iter = 20;
+
+    // Warmup
+    kernel<<<grid, block>>>(d_a, d_b, d_c, M, N, K, alpha, beta);
+    _cudaCheck(cudaDeviceSynchronize());
+
+    // Benchmark
+    _cudaCheck(cudaEventRecord(start));
+    for (int i = 0; i < iter; i++) {
+        kernel<<<grid, block>>>(d_a, d_b, d_c, M, N, K, alpha, beta);
+    }
+    _cudaCheck(cudaEventRecord(stop));
+    _cudaCheck(cudaEventSynchronize(stop));
+
+    float ms = 0.0f;
+    _cudaCheck(cudaEventElapsedTime(&ms, start, stop));
+
+    // Verify
+    _cudaCheck(cudaMemcpy(h_c, d_c, size_c, cudaMemcpyDeviceToHost));
+    bool correct = verify_matrix(h_c, h_c_ref, M * N);
+
+    // Report
+    float avg_time = ms / iter;
+    float gflops = (2.0f * M * N * K) / (avg_time * 1e6);
+    printf("%-10s: Time = %.3f ms, Performance = %.2f GFLOPS, Result = %s\n",
+           name, avg_time, gflops, correct ? "PASS" : "FAIL");
 }
 
 
@@ -351,12 +405,12 @@ __global__ void sgemm_v6( float *A,  float *B, float *C, int M, int N, int K, fl
         for (int i=0;i<BK;++i){
             #pragma unroll
             for (int m=0;m<TM;m+=4){
-                // 转置就是为了这里
-                FETCH_FLOAT4(a_reg[m]) = FETCH_FLOAT4(As[i * BM][(row_c + m) ]);
+                // 转置就是为了这里，As是[BK][BM]
+                FETCH_FLOAT4(a_reg[m]) = FETCH_FLOAT4(As[i][row_c + m]);
             }
             #pragma unroll
             for (int n=0;n<TN;n+=4){
-                FETCH_FLOAT4(b_reg[n]) = FETCH_FLOAT4(Bs[i * BN][col_c + n]);
+                FETCH_FLOAT4(b_reg[n]) = FETCH_FLOAT4(Bs[i][col_c + n]);
             }
             #pragma unroll
             for (int m=0;m<TM;++m){
@@ -373,12 +427,13 @@ __global__ void sgemm_v6( float *A,  float *B, float *C, int M, int N, int K, fl
 
     #pragma unroll
     for (int m=0;m<TM;++m){
-        for (int n =0;n<TN;++n){ 
-            float4  c_fl4 =FETCH_FLOAT4(C[(row_c + m) * N + col_c + n]);
+        #pragma unroll
+        for (int n=0;n<TN;n+=4){
+            float4 c_fl4 = FETCH_FLOAT4(C[(row_c + m) * N + col_c + n]);
             c_fl4.x = alpha * tmp[m][n] + beta * c_fl4.x;
-            c_fl4.y = alpha * tmp[m][n] + beta * c_fl4.y;
-            c_fl4.z = alpha * tmp[m][n] + beta * c_fl4.z;
-            c_fl4.w = alpha * tmp[m][n] + beta * c_fl4.w;
+            c_fl4.y = alpha * tmp[m][n+1] + beta * c_fl4.y;
+            c_fl4.z = alpha * tmp[m][n+2] + beta * c_fl4.z;
+            c_fl4.w = alpha * tmp[m][n+3] + beta * c_fl4.w;
             FETCH_FLOAT4(C[(row_c + m) * N + col_c + n]) = c_fl4;
         }
     }
@@ -392,8 +447,7 @@ __global__ void sgemm_v7( float *A,  float *B, float *C, int M, int N, int K, fl
     int bx = blockIdx.x;
     int by = blockIdx.y;
 
-
-    int thread_num = BM * BN / (TM * TN);
+    constexpr int thread_num = BM * BN / (TM * TN);
 
     // 一个线程负责计算 TM * TN 个 C 矩阵元素
     // 一共需要 BM/TM * BN/TN 个线程
@@ -460,18 +514,18 @@ __global__ void sgemm_v7( float *A,  float *B, float *C, int M, int N, int K, fl
             #pragma unroll
             for (int i=0;i<BK; i += stride_b) {
                 int ldg_index = i / stride_b * 4;  // 第ldg_index轮
-                FETCH_FLOAT4(ldg_b_reg[ldg_index]) = FETCH_FLOAT4(B[(row_b + i) * N + col_b + k]);
+                FETCH_FLOAT4(ldg_b_reg[ldg_index]) = FETCH_FLOAT4(B[(row_b + i + k) * N + col_b]);
             }
         }
         load_index = write_index^1;
         #pragma unroll
         for (int m=0;m<TM;m+=4){
-            // 转置就是为了这里
-            FETCH_FLOAT4(a_reg[0][m]) = FETCH_FLOAT4(As[load_index][0 * BM][(row_c + m) ]);
+            // 转置就是为了这里，As是[2][BK][BM]
+            FETCH_FLOAT4(a_reg[0][m]) = FETCH_FLOAT4(As[load_index][0][row_c + m]);
         }
         #pragma unroll
         for (int n=0;n<TN;n+=4){
-            FETCH_FLOAT4(b_reg[0][n]) = FETCH_FLOAT4(Bs[load_index][0 * BN][col_c + n]);
+            FETCH_FLOAT4(b_reg[0][n]) = FETCH_FLOAT4(Bs[load_index][0][col_c + n]);
         }
 
         // 加载下一次迭代的数据
@@ -479,11 +533,11 @@ __global__ void sgemm_v7( float *A,  float *B, float *C, int M, int N, int K, fl
         for(int bk=0;bk<BK-1;++bk){
             for (int m=0;m<TM;m+=4){
                 // 转置就是为了这里
-                FETCH_FLOAT4(a_reg[(bk+1)%2][m]) = FETCH_FLOAT4(As[load_index][(bk+1) * BM][(row_c + m) ]);
+                FETCH_FLOAT4(a_reg[(bk+1)%2][m]) = FETCH_FLOAT4(As[load_index][bk+1][row_c + m]);
             }
             #pragma unroll
             for (int n=0;n<TN;n+=4){
-                FETCH_FLOAT4(b_reg[(bk+1)%2][n]) = FETCH_FLOAT4(Bs[load_index][(bk+1) * BN][col_c + n]);
+                FETCH_FLOAT4(b_reg[(bk+1)%2][n]) = FETCH_FLOAT4(Bs[load_index][bk+1][col_c + n]);
             }
             #pragma unroll
             for (int m=0;m<TM;++m){
@@ -504,22 +558,22 @@ __global__ void sgemm_v7( float *A,  float *B, float *C, int M, int N, int K, fl
         if (k < K) {
             #pragma unroll
             for (int i=0;i<BM; i += stride_a) {
-                // 0 4 8 12 ... 
+                // 0 4 8 12 ...
                 int ldg_index = i / stride_a * 4;  // 第ldg_index轮
                 // As转置存，fl4中间缓存，减少共享内存访问冲突
-                As[0][(col_a)][ i + row_a] = ldg_a_reg[ldg_index];
-                As[0][(col_a + 1)][ i + row_a] = ldg_a_reg[ldg_index+1];
-                As[0][(col_a + 2)][ i + row_a] = ldg_a_reg[ldg_index+2];
-                As[0][(col_a + 3)][ i + row_a] = ldg_a_reg[ldg_index+3];
+                As[write_index][col_a][ i + row_a] = ldg_a_reg[ldg_index];
+                As[write_index][col_a + 1][ i + row_a] = ldg_a_reg[ldg_index+1];
+                As[write_index][col_a + 2][ i + row_a] = ldg_a_reg[ldg_index+2];
+                As[write_index][col_a + 3][ i + row_a] = ldg_a_reg[ldg_index+3];
             }
             #pragma unroll
             for (int i=0;i<BK; i += stride_b) {
-                // 0 4 8 12 ... 
+                // 0 4 8 12 ...
                 int ldg_index = i / stride_b * 4;  // 第ldg_index轮
-                FETCH_FLOAT4(Bs[write_index][row_b + i][col_b]) = FETCH_FLOAT4(B[(row_b + i) * N + col_b]); // 不需要转置
+                FETCH_FLOAT4(Bs[write_index][row_b + i][col_b]) = FETCH_FLOAT4(ldg_b_reg[ldg_index]);
             }
         }
-        write_index = load_index^1;
+        write_index = load_index;
     }while (k < K);
 
 
@@ -527,13 +581,101 @@ __global__ void sgemm_v7( float *A,  float *B, float *C, int M, int N, int K, fl
     #pragma unroll
     for (int m=0;m<TM;++m){
         #pragma unroll
-        for (int n =0;n<TN;++n){ 
-            float4  c_fl4 =FETCH_FLOAT4(C[(row_c + m) * N + col_c + n]);
+        for (int n=0;n<TN;n+=4){
+            float4 c_fl4 = FETCH_FLOAT4(C[(row_c + m) * N + col_c + n]);
             c_fl4.x = alpha * tmp[m][n] + beta * c_fl4.x;
-            c_fl4.y = alpha * tmp[m][n] + beta * c_fl4.y;
-            c_fl4.z = alpha * tmp[m][n] + beta * c_fl4.z;
-            c_fl4.w = alpha * tmp[m][n] + beta * c_fl4.w;
+            c_fl4.y = alpha * tmp[m][n+1] + beta * c_fl4.y;
+            c_fl4.z = alpha * tmp[m][n+2] + beta * c_fl4.z;
+            c_fl4.w = alpha * tmp[m][n+3] + beta * c_fl4.w;
             FETCH_FLOAT4(C[(row_c + m) * N + col_c + n]) = c_fl4;
         }
     }
+}
+
+
+
+int main() {
+    // A: 1024*512 (M*K)
+    // B: 512*1024 (K*N)
+    // C: 1024*1024 (M*N)
+    const int M = 1024;
+    const int K = 512;
+    const int N = 1024;
+    
+    size_t size_a = M * K * sizeof(float);
+    size_t size_b = K * N * sizeof(float);
+    size_t size_c = M * N * sizeof(float);
+
+    float *h_a, *h_b, *h_c, *h_c_ref;
+    h_a = (float *)malloc(size_a);
+    h_b = (float *)malloc(size_b);
+    h_c = (float *)malloc(size_c);
+    h_c_ref = (float *)malloc(size_c);
+
+    randomize_matrix(h_a, M * K);
+    randomize_matrix(h_b, K * N);
+
+    float *d_a, *d_b, *d_c;
+    _cudaCheck(cudaMalloc(&d_a, size_a));
+    _cudaCheck(cudaMalloc(&d_b, size_b));
+    _cudaCheck(cudaMalloc(&d_c, size_c));
+
+    _cudaCheck(cudaMemcpy(d_a, h_a, size_a, cudaMemcpyHostToDevice));
+    _cudaCheck(cudaMemcpy(d_b, h_b, size_b, cudaMemcpyHostToDevice));
+
+    float alpha = 1.0f;
+    float beta = 0.0f;
+
+    // cuBLAS as reference
+    cublasHandle_t handle;
+    cublasCreate(&handle);
+    // C = A * B. In column-major (cuBLAS default): C^T = B^T * A^T.
+    // We pass A and B as if they are transposed (because they are row-major).
+    // lda = K (columns of A^T), ldb = N (columns of B^T), ldc = N (columns of C^T)
+    cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &alpha, d_b, N, d_a, K, &beta, d_c, N);
+    _cudaCheck(cudaMemcpy(h_c_ref, d_c, size_c, cudaMemcpyDeviceToHost));
+
+    cudaEvent_t start, stop;
+    _cudaCheck(cudaEventCreate(&start));
+    _cudaCheck(cudaEventCreate(&stop));
+
+    // v1
+    benchmark_kernel(sgemm_v1, dim3(CEIL(N, 32), CEIL(M, 32)), dim3(32, 32),
+                     d_a, d_b, d_c, M, N, K, alpha, beta,
+                     h_c, h_c_ref, size_c, start, stop, "sgemm_v1");
+
+    // v2
+    benchmark_kernel(sgemm_v2<32>, dim3(CEIL(N, 32), CEIL(M, 32)), dim3(1024),
+                     d_a, d_b, d_c, M, N, K, alpha, beta,
+                     h_c, h_c_ref, size_c, start, stop, "sgemm_v2");
+
+    // v3: BM=128, BN=16, BK=8, TM=8, Block dim = 128*16/8 = 256
+    benchmark_kernel(sgemm_v3<128, 16, 8, 8>, dim3(CEIL(N, 16), CEIL(M, 128)), dim3(256),
+                     d_a, d_b, d_c, M, N, K, alpha, beta,
+                     h_c, h_c_ref, size_c, start, stop, "sgemm_v3");
+
+    // v4: BM=128, BN=128, BK=8, TM=8, TN=8, Block dim = 128*128/(8*8) = 256
+    benchmark_kernel(sgemm_v4<128, 128, 8, 8, 8>, dim3(CEIL(N, 128), CEIL(M, 128)), dim3(256),
+                     d_a, d_b, d_c, M, N, K, alpha, beta,
+                     h_c, h_c_ref, size_c, start, stop, "sgemm_v4");
+
+    // v5
+    benchmark_kernel(sgemm_v5<128, 128, 8, 8, 8>, dim3(CEIL(N, 128), CEIL(M, 128)), dim3(256),
+                     d_a, d_b, d_c, M, N, K, alpha, beta,
+                     h_c, h_c_ref, size_c, start, stop, "sgemm_v5");
+
+    // v6
+    benchmark_kernel(sgemm_v6<128, 128, 8, 8, 8>, dim3(CEIL(N, 128), CEIL(M, 128)), dim3(256),
+                     d_a, d_b, d_c, M, N, K, alpha, beta,
+                     h_c, h_c_ref, size_c, start, stop, "sgemm_v6");
+
+    // v7
+    benchmark_kernel(sgemm_v7<128, 128, 8, 8, 8>, dim3(CEIL(N, 128), CEIL(M, 128)), dim3(256),
+                     d_a, d_b, d_c, M, N, K, alpha, beta,
+                     h_c, h_c_ref, size_c, start, stop, "sgemm_v7");
+
+    cublasDestroy(handle);
+    cudaFree(d_a); cudaFree(d_b); cudaFree(d_c);
+    free(h_a); free(h_b); free(h_c); free(h_c_ref);
+    return 0;
 }
