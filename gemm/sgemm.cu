@@ -15,6 +15,8 @@ void _cudaCheck(cudaError_t err) {
 }
 
 // v1 每个线程负责C矩阵中的一个元素计算，但是全局内存
+// __launch_bounds__限制每个block最多1024个线程，避免寄存器溢出导致性能下降
+
 __global__ __launch_bounds__(1024)
 void sgemm_v1(const float *A, const float *B, float *C, int M, int N, int K,float alpha, float beta) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
@@ -27,7 +29,8 @@ void sgemm_v1(const float *A, const float *B, float *C, int M, int N, int K,floa
     C[row * N + col] = sum + beta * C[row * N + col];
 }
 
-// v2 每个线程负责C矩阵中的一个元素计算，按照block分块，利用共享内存
+// v2 每个线程负责C矩阵中的一个元素计算，每个block负责一个C矩阵块的计算，利用共享内存减少全局内存访问
+// A*B=A0*B0+A1*B1
 template <int BLOCK_SIZE>
 __global__ void sgemm_v2(const float *A, const float *B, float *C, int M, int N, int K, float alpha, float beta) {
     const int BM = BLOCK_SIZE;
@@ -53,7 +56,8 @@ __global__ void sgemm_v2(const float *A, const float *B, float *C, int M, int N,
         As[row_c][col_c] = A[row_c * K + col_c];
         Bs[row_c][col_c] = B[row_c * N + col_c ];
         __syncthreads();
-        for (int n = 0; n < BK; ++n) {
+        // 相当于算A0*B0
+        for (int n = 0; n < BK; ++n) {                                          
             sum += As[row_c][n] * Bs[n][col_c];
         }
         // 移动AB到下一个矩阵块
@@ -64,7 +68,7 @@ __global__ void sgemm_v2(const float *A, const float *B, float *C, int M, int N,
     C[row_c * N + col_c] = sum * alpha + beta * C[row_c * N + col_c];
 }
 
-// v3 每个线程负责C一列，利用寄存器和共享内存
+// v3 每个线程都访问shared memory太多了，所以每个线程负责TM个C元素
 template <const int BM , const int BN, const int BK, const int TM>
 __global__ void sgemm_v3( float *A,  float *B, float *C, int M, int N, int K, float alpha, float beta) {
     int bx = blockIdx.x;
@@ -89,7 +93,7 @@ __global__ void sgemm_v3( float *A,  float *B, float *C, int M, int N, int K, fl
     int row_b = threadIdx.x / BN;
     int stride_b = thread_num / BN;
 
-    // 额外的一个寄存器用于缓存,tmp[TM]保存的是Bs[row_c * BN][col_c];访存压缩
+    // 额外的一个寄存器用于缓存,tmp[TM]保存的是Bs[i][col_c];避免每次访问Bs
     float tmp[TM+1] = {0.0f};
 
     // 移动窗口
@@ -595,12 +599,10 @@ __global__ void sgemm_v7( float *A,  float *B, float *C, int M, int N, int K, fl
 
 
 int main() {
-    // A: 1024*512 (M*K)
-    // B: 512*1024 (K*N)
-    // C: 1024*1024 (M*N)
-    const int M = 1024;
-    const int K = 512;
-    const int N = 1024;
+
+    const int M = 1024*8;
+    const int K = 512*8;
+    const int N = 1024*4;
     
     size_t size_a = M * K * sizeof(float);
     size_t size_b = K * N * sizeof(float);

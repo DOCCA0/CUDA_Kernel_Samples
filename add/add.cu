@@ -12,7 +12,7 @@ void _cudaCheck(cudaError_t err) {
         exit(EXIT_FAILURE);
     }
 }
-
+// 每一个线程处理4个c的计算结果
 __global__ void elementwise_add(float* a, float* b, float* c, int n){
     int idx=(blockIdx.x * blockDim.x + threadIdx.x) * 4;
     if (idx >=n)
@@ -27,6 +27,7 @@ __global__ void elementwise_add(float* a, float* b, float* c, int n){
     FLOAT4(c[idx]) = tmp_c;
 }
 
+// 每一个线程处理4个c的计算结果，如果剩余的元素不足4个，则由该线程处理剩余的元素
 __global__ void elementwise_add_peeling(float* a, float* b, float* c, int n){
     int idx=(blockIdx.x * blockDim.x + threadIdx.x) * 4;
     if (idx >=n)

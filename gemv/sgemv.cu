@@ -15,14 +15,16 @@ void _cudaCheck(cudaError_t err) {
 }
 
 // 适合K在[32,128]
+// A是MxK的矩阵，x是K*1，y是M*1的结果
+// 一个block负责一个结果行，一个warp每一行内部规约，所以block内多个warp无意义重复计算
 __global__ void sgemv_k32(float* A, float* x, float* y, int M,int K) {
     // warp内id
     int lane_id = threadIdx.x % warpSize;
-    // 一个block（warp）负责一行M
+    // 一个block负责一个结果行
     int row = blockIdx.x ;
 
     float res=0.0f;
-    // 每个线程处理多个元素
+    // 每一行分成多少个warpSize的块
     int kIters = CEIL(K, warpSize);
 
     #pragma unroll
@@ -33,6 +35,7 @@ __global__ void sgemv_k32(float* A, float* x, float* y, int M,int K) {
 
     // warp内归约
     for(int offset = warpSize >> 1;offset > 0; offset >>= 1) 
+        // 不用shuffle 只能绕道shared memory，然后__syncthreads()，效率较低
         res += __shfl_down_sync(0xffffffff, res, offset);
 
     if(lane_id == 0)
