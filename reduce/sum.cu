@@ -96,6 +96,7 @@ __global__ void reduce_v1(float* x_d, float* y_d, int n) {
 
 // reduce_v2：使用动态共享内存，一个线程处理一个元素，但是每个block的数据搬运到共享内存中
 __global__ void reduce_v2(float* x_d, float* y_d, int n) {
+    // 一个函数只允许有一个extern __shared__声明，大小在kernel的第三个参数
     extern __shared__ float sdata[];
     int gid = blockIdx.x * blockDim.x + threadIdx.x;
     int tid = threadIdx.x;
