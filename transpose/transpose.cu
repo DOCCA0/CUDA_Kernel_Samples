@@ -67,6 +67,8 @@ __global__ void device_transpose_v3(float *input, int M, int N, float *output) {
 
     __syncthreads();
 
+    //blockIdx.y * TILE_DIM
+    // blockIdx.x * TILE_DIM 相当于定位到输出矩阵中对应的tile块的左上角坐标，这是不变的
     const int x2 = blockIdx.y * TILE_DIM + threadIdx.x;
     const int y2 = blockIdx.x * TILE_DIM + threadIdx.y;
     if (x2 < M && y2 < N) {
@@ -119,12 +121,12 @@ __global__ void device_transpose_v5(float *input, int M, int N, float *output) {
     const int y2 = blockIdx.x * TILE_DIM + threadIdx.y;
     if (x2 < M && y2 < N) {
         // swizzling主要利用了异或运算的以下两个性质来规避bank conflict：
-        // 封闭性：对于任意整数 x、y，x ^ y 的结果仍然是一个整数，并且在 0 到最大线程索引范围内，不会越界。
-        // 唯一性：对于固定的 y，x1 ^ y != x2 ^ y 当且仅当 x1 != x2。
-        // 0,1,2,3...
-        // 1,0,3,2...
-        // 2,3,0,1...
-        // 3,2,1,0...
+
+        // 如果原始列号是 0,1,2,3，那么异或后会变成：
+        // ^0 -> 0,1,2,3
+        // ^1 -> 1,0,3,2
+        // ^2 -> 2,3,0,1
+        // ^3 -> 3,2,1,0
         output[y2 * M + x2] = tile[threadIdx.x][threadIdx.x^threadIdx.y];
     };
 }

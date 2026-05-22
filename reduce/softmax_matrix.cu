@@ -403,7 +403,7 @@ int main() {
     });
     printf("CPU time: %f ms\n", cpu_time / repeat_times);
 
-    // GPU Kernel 1 (Block)
+    // GPU Kernel 1 (Block)，一个block（4个warp）处理一行
     dim3 block(128);
     dim3 grid(M);
     float gpu_time = TIME_RECORD(repeat_times, ([&] {
