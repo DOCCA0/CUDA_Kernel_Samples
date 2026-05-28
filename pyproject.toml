@@ -1,0 +1,17 @@
+[project]
+name = "cuda-kernel-samples"
+version = "0.1.0"
+description = "CUDA kernel samples with small Python LLM demos."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch",
+]
+
+[tool.uv]
+package = false
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true

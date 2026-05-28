@@ -4,4 +4,8 @@
 # cmake
 *build*/
 
+.venv/
+
 test.cpp
+uv.lock
+__pycache__/
