@@ -8,9 +8,9 @@ set(CMAKE_CUDA_STANDARD 11)
 # add_executable(softmax ./reduce/softmax.cu)
 # add_executable(softmax_matrix ./reduce/softmax_matrix.cu)
 # add_executable(sgemm ./gemm/sgemm.cu)
-add_executable(rmsnorm ./llm/rmsnorm.cu)
+add_executable(self_attention ./llm/self_attention.cu)
 
 
 
-# target_link_libraries(softmax_matrix PRIVATE cublas)
+target_link_libraries(self_attention PRIVATE cublas)
 
