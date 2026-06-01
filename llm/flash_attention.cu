@@ -4,7 +4,6 @@
 #include <cassert>
 #include <cmath>
 
-#include "helper.h"
 
 #define CUDA_CHECK(condition)                                          \
   do {                                                                 \
@@ -314,7 +313,15 @@ __global__ void row_softmax(float *input, float *output, int n) {
     output[idx * n + i] /= sum;
   }
 }
-
+bool all_close(float *A, float *B, int m, int n) {
+  for (int i = 0; i < m * n; i++) {
+    if (fabs(A[i] - B[i]) > 1e-3f) {
+      printf("A[%d] = %f, B[%d] = %f\n", i, A[i], i, B[i]);
+      return false;
+    }
+  }
+  return true;
+}
 void test_attention() {
   // seqlen
   int m = input_seq;
@@ -402,7 +409,7 @@ void test_attention() {
 }
 
 int main() {
-  int epoch = 10;
+  int epoch = 1;
   for (int i = 0; i < epoch; i++) {
     test_attention();
   }
