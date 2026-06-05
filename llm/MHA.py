@@ -28,7 +28,7 @@ class MultiHeadAttention(nn.Module):
         # 输出线性层
         self.out_projection = nn.Linear(hidden_size, hidden_size)
 
-    def forward(self, hidden_state, attention_mask=None):
+    def forward(self, hidden_state):
 
         """
         前向传播函数。
@@ -58,13 +58,13 @@ class MultiHeadAttention(nn.Module):
         # [batch_size, num_heads, seq_len, seq_len]，除以根号，防止数值过大导致梯度消失
         attention_weights = torch.matmul(query, key.transpose(-2, -1)) / (self.head_dim ** 0.5)  
 
-        # 应用 attention mask，非casual mask
-        if attention_mask is not None:
-            attention_weights = attention_weights.masked_fill(
-                # [batch_size, 1, 1, seq_len]
-                attention_mask[:, None, None, :] == 0,
-                float('-inf')
-            )
+        # # 应用 attention mask，非casual mask
+        # if attention_mask is not None:
+        #     attention_weights = attention_weights.masked_fill(
+        #         # [batch_size, 1, 1, seq_len]
+        #         attention_mask[:, None, None, :] == 0,
+        #         float('-inf')
+        #     )
 
         attention_weights = torch.softmax(attention_weights, dim=-1)  # [batch_size, num_heads, seq_len, seq_len]
         attention_weights = self.dropout(attention_weights)
@@ -91,12 +91,12 @@ if __name__ == '__main__':
     # 创建一个随机的 hidden_state
     hidden_state = torch.randn(batch_size, seq_len, hidden_size)
 
-    # 创建一个 attention mask (可选)
-    attention_mask = torch.ones(batch_size, seq_len)
-    attention_mask[:, 5:] = 0  # 屏蔽掉每个 batch 中 seq_len 的后 5 个位置
+    # # 创建一个 attention mask (可选)
+    # attention_mask = torch.ones(batch_size, seq_len)
+    # attention_mask[:, 5:] = 0  # 屏蔽掉每个 batch 中 seq_len 的后 5 个位置
 
     # 通过 MHA 层
-    output = mha(hidden_state, attention_mask)
+    output = mha(hidden_state)
 
     # 打印输出形状
     print("输出形状:", output.shape)  # torch.Size([2, 10, 256])

@@ -30,7 +30,7 @@ class GroupedQueryAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.out_projection = nn.Linear(hidden_size, hidden_size)
 
-    def forward(self, hidden_state, attention_mask=None):
+    def forward(self, hidden_state, ):
         """
         前向传播函数。
         Args:
@@ -59,8 +59,9 @@ class GroupedQueryAttention(nn.Module):
 
         # 3. 计算注意力权重
         attention_weights = torch.matmul(query, key.transpose(-2, -1)) / (self.head_dim ** 0.5)
-        if attention_mask is not None:
-            attention_weights = attention_weights.masked_fill(attention_mask[:, None, None, :] == 0, float('-inf'))
+        # if attention_mask is not None:
+        #     attention_weights = attention_weights.masked_fill(attention_mask[:, None, None, :] == 0, float('-inf'))
+        
         attention_weights = torch.softmax(attention_weights, dim=-1)
         attention_weights = self.dropout(attention_weights)
 
@@ -84,8 +85,8 @@ if __name__ == '__main__':
 
     gqa = GroupedQueryAttention(hidden_size, num_heads, group_size)
     hidden_state = torch.randn(batch_size, seq_len, hidden_size)
-    attention_mask = torch.ones(batch_size, seq_len)
+    # attention_mask = torch.ones(batch_size, seq_len)
 
-    attention_mask[:, 5:] = 0  # 屏蔽后 5 个位置
-    output = gqa(hidden_state, attention_mask)
+    # attention_mask[:, 5:] = 0  # 屏蔽后 5 个位置
+    output = gqa(hidden_state)
     print("输出形状:", output.shape)  # torch.Size([2, 10, 256])
